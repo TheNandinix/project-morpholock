@@ -53,6 +53,8 @@ def compute_risk_score(sensor_window: list, context_result: dict) -> dict:
         logger.warning("No model loaded or insufficient data — tremor risk set to max")
     else:
         try:
+            import sys as _sys, os as _os
+            _sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), '..', 'ml_pipeline'))
             from signal_processor import extract_features
             features = extract_features(sensor_window)
             if features is not None:
@@ -62,6 +64,9 @@ def compute_risk_score(sensor_window: list, context_result: dict) -> dict:
                 tremor_risk = max(0, min(50, int((-raw_score) * 100)))
             else:
                 tremor_risk = 50
+        except ImportError:
+            logger.warning("signal_processor.py not available yet — using dummy tremor score")
+            tremor_risk = 50
         except Exception as e:
             logger.error(f"Tremor scoring failed: {e}")
             tremor_risk = 50

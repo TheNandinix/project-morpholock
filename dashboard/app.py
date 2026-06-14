@@ -1,12 +1,8 @@
 """
 app.py — MorphoLock Live Dashboard
-===================================
-The visual centrepiece of the entire system.
-Built with Streamlit. Shows live tremor spectrum,
-risk score, transaction details, and system log.
-
+Final production version
 Author: Nandini (Team Lead)
-Run with: streamlit run dashboard/app.py
+Run: streamlit run dashboard/app.py
 """
 
 import streamlit as st
@@ -15,14 +11,11 @@ import numpy as np
 import time
 import random
 from datetime import datetime
-import sys
-import os
+import sys, os
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-# ─────────────────────────────────────────────────────
-# PAGE CONFIGURATION — must be first Streamlit command
-# ─────────────────────────────────────────────────────
+# ── Page config — must be first ──
 st.set_page_config(
     page_title="MorphoLock",
     page_icon="🔐",
@@ -30,734 +23,729 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# ─────────────────────────────────────────────────────
-# CUSTOM CSS — the visual identity of the dashboard
-# This is what makes it look premium and alive
-# ─────────────────────────────────────────────────────
+# ── Lottie — optional, graceful fallback if not installed ──
+try:
+    from streamlit_lottie import st_lottie
+    import requests as _req
+    def load_lottie(url):
+        try:
+            r = _req.get(url, timeout=4)
+            return r.json() if r.status_code == 200 else None
+        except:
+            return None
+    LOTTIE_OK = True
+except ImportError:
+    LOTTIE_OK = False
+
+# ────────────────────────────────────────────
+# CSS — The visual identity
+# ────────────────────────────────────────────
 st.markdown("""
 <style>
-/* Import clean font */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
 
-/* Base styles */
 html, body, [class*="css"] {
     font-family: 'Inter', sans-serif;
-    background-color: #0A0A0F;
+    background-color: #070710;
     color: #E8E6F0;
 }
+.block-container { padding: 1rem 1.4rem; max-width: 100%; }
+#MainMenu, footer, header { visibility: hidden; }
 
-/* Remove Streamlit default padding */
-.block-container {
-    padding: 1.2rem 1.5rem 1rem 1.5rem;
-    max-width: 100%;
+/* ── Particle canvas ── */
+#tsparticles {
+    position: fixed; top:0; left:0;
+    width:100%; height:100%; z-index:0;
+    pointer-events:none;
 }
 
-/* Hide default Streamlit menu and footer */
-#MainMenu, footer, header {visibility: hidden;}
-
-/* ── Cards ── */
-.ml-card {
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 14px;
-    padding: 18px 20px;
-    margin-bottom: 12px;
-    backdrop-filter: blur(10px);
-}
+/* ── All content above particles ── */
+.main .block-container { position: relative; z-index: 1; }
 
 /* ── Header ── */
 .ml-header {
-    display: flex;
-    align-items: center;
+    display: flex; align-items: center;
     justify-content: space-between;
     padding: 14px 22px;
-    background: rgba(83, 74, 183, 0.08);
-    border: 1px solid rgba(83, 74, 183, 0.2);
+    background: rgba(83,74,183,0.07);
+    border: 1px solid rgba(83,74,183,0.18);
     border-radius: 14px;
-    margin-bottom: 16px;
+    margin-bottom: 14px;
+    position: relative; overflow: hidden;
 }
+.ml-header::after {
+    content:'';
+    position:absolute; top:0; left:-60%;
+    width:50%; height:100%;
+    background: linear-gradient(90deg,transparent,
+        rgba(83,74,183,0.07),transparent);
+    animation: scan 5s linear infinite;
+}
+@keyframes scan { 0%{left:-60%} 100%{left:110%} }
+
 .ml-logo {
-    font-size: 20px;
-    font-weight: 600;
-    color: #E8E6F0;
-    letter-spacing: -0.3px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
+    font-size: 18px; font-weight: 600;
+    color: #E8E6F0; letter-spacing: -0.3px;
+    display: flex; align-items: center; gap: 10px;
 }
 .ml-logo-sub {
-    font-size: 12px;
-    font-weight: 400;
-    color: rgba(232,230,240,0.4);
-    margin-left: 4px;
+    font-size: 11px; font-weight: 400;
+    color: rgba(232,230,240,0.35); margin-left: 4px;
 }
 .live-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    background: rgba(29, 158, 117, 0.12);
-    border: 1px solid rgba(29, 158, 117, 0.25);
-    border-radius: 20px;
-    padding: 5px 14px;
-    font-size: 12px;
-    color: #4ECFA0;
-    font-weight: 500;
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(29,158,117,0.1);
+    border: 1px solid rgba(29,158,117,0.22);
+    border-radius: 20px; padding: 5px 14px;
+    font-size: 11px; color: #4ECFA0; font-weight: 500;
 }
 .live-dot {
-    width: 7px; height: 7px;
-    background: #1D9E75;
-    border-radius: 50%;
+    width:7px; height:7px; background:#1D9E75;
+    border-radius:50%;
     animation: breathe 2s ease-in-out infinite;
 }
 @keyframes breathe {
-    0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 0 rgba(29,158,117,0.4); }
-    50% { opacity: 0.6; transform: scale(0.85); box-shadow: 0 0 0 4px rgba(29,158,117,0); }
+    0%,100%{opacity:1;transform:scale(1)}
+    50%{opacity:0.4;transform:scale(0.75)}
 }
 
 /* ── Stat cards ── */
 .stat-card {
-    background: rgba(255,255,255,0.03);
+    background: rgba(255,255,255,0.025);
     border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 12px;
-    padding: 14px 18px;
+    border-radius: 12px; padding: 14px 16px;
     text-align: center;
 }
 .stat-label {
-    font-size: 10px;
-    font-weight: 500;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: rgba(232,230,240,0.35);
-    margin-bottom: 6px;
+    font-size: 10px; font-weight: 500;
+    letter-spacing:.08em; text-transform:uppercase;
+    color: rgba(232,230,240,0.3); margin-bottom:6px;
 }
-.stat-value {
-    font-size: 28px;
-    font-weight: 500;
-    line-height: 1;
-    color: #E8E6F0;
-}
-.stat-sub {
-    font-size: 10px;
-    color: rgba(232,230,240,0.3);
-    margin-top: 4px;
-}
+.stat-value { font-size:26px; font-weight:500; line-height:1; color:#E8E6F0; }
+.stat-sub   { font-size:10px; color:rgba(232,230,240,0.25); margin-top:4px; }
 
 /* ── Section labels ── */
-.section-label {
-    font-size: 10px;
-    font-weight: 500;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: rgba(232,230,240,0.35);
-    margin-bottom: 12px;
+.sec-label {
+    font-size:10px; font-weight:500;
+    letter-spacing:.08em; text-transform:uppercase;
+    color:rgba(232,230,240,0.3); margin-bottom:10px;
 }
 
-/* ── Decision box ── */
-.decision-approved {
-    background: rgba(29, 158, 117, 0.1);
-    border: 1px solid rgba(29, 158, 117, 0.3);
-    border-radius: 12px;
-    padding: 16px;
-    text-align: center;
+/* ── Pulse rings around gauge ── */
+.gauge-wrap { position:relative; }
+.pulse-ring {
+    position:absolute; top:50%; left:50%;
+    transform:translate(-50%,-50%);
+    width:155px; height:155px; border-radius:50%;
+    border:1.5px solid rgba(83,74,183,0.35);
+    animation:rpulse 3.5s ease-in-out infinite;
+    pointer-events:none;
 }
-.decision-blocked {
-    background: rgba(220, 53, 69, 0.1);
-    border: 1px solid rgba(220, 53, 69, 0.3);
-    border-radius: 12px;
-    padding: 16px;
-    text-align: center;
+.pulse-ring-2 {
+    animation-delay:1.75s;
+    border-color:rgba(83,74,183,0.15);
+    width:180px; height:180px;
 }
-.decision-stepup {
-    background: rgba(255, 165, 0, 0.1);
-    border: 1px solid rgba(255, 165, 0, 0.3);
-    border-radius: 12px;
-    padding: 16px;
-    text-align: center;
+.pulse-ring-green {
+    border-color:rgba(29,158,117,0.35);
+    animation-delay:0s;
 }
-.decision-title {
-    font-size: 16px;
-    font-weight: 600;
-    margin-bottom: 4px;
+.pulse-ring-red {
+    border-color:rgba(255,71,87,0.35);
+    animation-delay:0s;
 }
-.decision-sub {
-    font-size: 11px;
-    color: rgba(232,230,240,0.5);
+@keyframes rpulse {
+    0%,100%{transform:translate(-50%,-50%) scale(0.93);opacity:0.85}
+    50%{transform:translate(-50%,-50%) scale(1.07);opacity:0.2}
 }
 
-/* ── Threat tag ── */
+/* ── Decision boxes ── */
+.dec-approved {
+    background:rgba(29,158,117,0.09);
+    border:1px solid rgba(29,158,117,0.28);
+    border-radius:12px; padding:14px; text-align:center;
+}
+.dec-blocked {
+    background:rgba(255,71,87,0.09);
+    border:1px solid rgba(255,71,87,0.28);
+    border-radius:12px; padding:14px; text-align:center;
+}
+.dec-stepup {
+    background:rgba(255,179,71,0.09);
+    border:1px solid rgba(255,179,71,0.28);
+    border-radius:12px; padding:14px; text-align:center;
+}
+.dec-title { font-size:15px; font-weight:600; margin-bottom:3px; }
+.dec-sub   { font-size:11px; color:rgba(232,230,240,0.4); }
+
+/* ── Threat tags ── */
 .threat-clear {
-    display: inline-flex; align-items: center; gap: 6px;
-    background: rgba(29,158,117,0.1);
-    border: 1px solid rgba(29,158,117,0.2);
-    border-radius: 8px; padding: 6px 12px;
-    font-size: 11px; color: #4ECFA0;
+    display:inline-flex; align-items:center; gap:6px;
+    background:rgba(29,158,117,0.09);
+    border:1px solid rgba(29,158,117,0.2);
+    border-radius:8px; padding:6px 12px;
+    font-size:11px; color:#4ECFA0;
 }
 .threat-found {
-    display: inline-flex; align-items: center; gap: 6px;
-    background: rgba(220,53,69,0.1);
-    border: 1px solid rgba(220,53,69,0.2);
-    border-radius: 8px; padding: 6px 12px;
-    font-size: 11px; color: #FF6B7A;
+    display:inline-flex; align-items:center; gap:6px;
+    background:rgba(255,71,87,0.09);
+    border:1px solid rgba(255,71,87,0.2);
+    border-radius:8px; padding:6px 12px;
+    font-size:11px; color:#FF6B7A;
 }
 
 /* ── Log lines ── */
-.log-line {
-    font-family: 'JetBrains Mono', 'Courier New', monospace;
-    font-size: 11px;
-    padding: 3px 0;
-    border-bottom: 1px solid rgba(255,255,255,0.04);
-    color: rgba(232,230,240,0.55);
-    line-height: 1.6;
+.log-wrap {
+    height:190px; overflow-y:auto;
+    background:rgba(0,0,0,0.2);
+    border-radius:10px; padding:10px 12px;
 }
-.log-success { color: #4ECFA0; }
-.log-warning { color: #FFB347; }
-.log-error   { color: #FF6B7A; }
+.log-line {
+    font-family:'Courier New',monospace;
+    font-size:10.5px; padding:2px 0;
+    border-bottom:1px solid rgba(255,255,255,0.03);
+    color:rgba(232,230,240,0.45); line-height:1.7;
+}
+.log-ok   { color:#4ECFA0; }
+.log-warn { color:#FFB347; }
+.log-err  { color:#FF6B7A; }
+
+/* ── Txn rows ── */
+.txn-row {
+    display:flex; justify-content:space-between;
+    padding:6px 0;
+    border-bottom:1px solid rgba(255,255,255,0.05);
+    font-size:11px;
+}
+.txn-key { color:rgba(232,230,240,0.35); }
+.txn-val { font-family:monospace; color:#E8E6F0; }
 
 /* ── Component bars ── */
-.comp-bar-wrap {
-    background: rgba(255,255,255,0.06);
-    border-radius: 20px;
-    height: 5px;
-    overflow: hidden;
-    margin: 4px 0 6px;
+.cb-wrap {
+    background:rgba(255,255,255,0.06);
+    border-radius:20px; height:4px;
+    overflow:hidden; margin:3px 0 6px;
 }
-.comp-bar-fill {
-    height: 100%;
-    border-radius: 20px;
-    transition: width 0.6s ease;
-}
-
-/* ── Txn row ── */
-.txn-row {
-    display: flex;
-    justify-content: space-between;
-    padding: 7px 0;
-    border-bottom: 1px solid rgba(255,255,255,0.05);
-    font-size: 12px;
-}
-.txn-key { color: rgba(232,230,240,0.4); }
-.txn-val { font-family: monospace; color: #E8E6F0; }
-
-/* Plotly chart background */
-.js-plotly-plot .plotly {
-    background: transparent !important;
-}
+.cb-fill { height:100%; border-radius:20px; transition:width .7s ease; }
 </style>
+
+<!-- Particle background -->
+<script src="https://cdn.jsdelivr.net/npm/tsparticles@2/tsparticles.bundle.min.js"></script>
+<div id="tsparticles"></div>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    if(typeof tsParticles !== 'undefined') {
+        tsParticles.load("tsparticles", {
+            particles: {
+                number: { value: 40 },
+                color:  { value: "#534AB7" },
+                opacity:{ value: 0.12, random: true },
+                size:   { value: 1.8 },
+                move:   { enable:true, speed:0.35 },
+                links:  {
+                    enable:true, color:"#534AB7",
+                    opacity:0.07, distance:110
+                }
+            },
+            background:{ color:"transparent" }
+        });
+    }
+});
+</script>
 """, unsafe_allow_html=True)
 
 
-# ─────────────────────────────────────────────────────
-# SESSION STATE — persists across reruns
-# Like memory for a single session
-# ─────────────────────────────────────────────────────
-if 'transaction_count'  not in st.session_state:
-    st.session_state.transaction_count  = 0
-if 'approved_count'     not in st.session_state:
-    st.session_state.approved_count     = 0
-if 'blocked_count'      not in st.session_state:
-    st.session_state.blocked_count      = 0
-if 'log_lines'          not in st.session_state:
-    st.session_state.log_lines          = []
-if 'last_result'        not in st.session_state:
-    st.session_state.last_result        = None
-if 'risk_history'       not in st.session_state:
-    st.session_state.risk_history       = []
+# ────────────────────────────────────────────
+# SESSION STATE
+# ────────────────────────────────────────────
+defaults = {
+    'txn_count':    0,
+    'approved':     0,
+    'blocked':      0,
+    'log_lines':    [],
+    'last_result':  None,
+    'risk_history': []
+}
+for k, v in defaults.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
 
 
-# ─────────────────────────────────────────────────────
-# HELPER — generate fake tremor waveform for demo
-# When hardware is not connected — shows realistic data
-# When hardware IS connected — this gets replaced by real data
-# ─────────────────────────────────────────────────────
-def generate_demo_tremor(is_human: bool = True) -> np.ndarray:
-    """
-    Generates a realistic-looking tremor signal for demo.
-    Human = has 8-12 Hz component. Flat = near zero.
-    """
-    t = np.linspace(0, 2, 200)  # 2 seconds, 200 points
-    if is_human:
-        # Real human tremor: dominant 8-12Hz + small noise
-        signal = (
-            0.08 * np.sin(2 * np.pi * 10 * t) +   # 10Hz tremor
-            0.03 * np.sin(2 * np.pi * 8.5 * t) +  # 8.5Hz component
-            0.02 * np.sin(2 * np.pi * 11.5 * t) + # 11.5Hz component
-            0.01 * np.random.randn(200)             # small noise
+# ────────────────────────────────────────────
+# HELPERS
+# ────────────────────────────────────────────
+def add_log(msg: str, level: str = "info"):
+    ts = datetime.now().strftime("%H:%M:%S")
+    st.session_state.log_lines.append(
+        {"ts": ts, "msg": msg, "level": level}
+    )
+    st.session_state.log_lines = st.session_state.log_lines[-14:]
+
+
+def gen_tremor(human: bool = True) -> np.ndarray:
+    t = np.linspace(0, 2, 200)
+    if human:
+        return (
+            0.09 * np.sin(2*np.pi*10*t) +
+            0.03 * np.sin(2*np.pi*8.5*t) +
+            0.02 * np.sin(2*np.pi*11.2*t) +
+            0.008 * np.random.randn(200)
         )
-    else:
-        # Flat device — near zero signal
-        signal = 0.002 * np.random.randn(200)
-    return signal
+    return 0.002 * np.random.randn(200)
 
 
-def compute_fft_spectrum(signal: np.ndarray, sample_rate: int = 100):
-    """Converts raw signal into frequency spectrum using FFT."""
-    n = len(signal)
-    fft_vals = np.abs(np.fft.rfft(signal))
-    freqs    = np.fft.rfftfreq(n, d=1.0/sample_rate)
-    # Normalize to 0-1 scale
-    fft_vals = fft_vals / (fft_vals.max() + 1e-10)
-    return freqs, fft_vals
+def fft_spectrum(sig: np.ndarray):
+    n = len(sig)
+    fv = np.abs(np.fft.rfft(sig))
+    fr = np.fft.rfftfreq(n, d=1/100)
+    fv = fv / (fv.max() + 1e-10)
+    return fr, fv
 
 
-def add_log(message: str, level: str = "info"):
-    """Add a line to the system log with timestamp."""
-    timestamp = datetime.now().strftime("%H:%M:%S")
-    st.session_state.log_lines.append({
-        "time": timestamp,
-        "msg":  message,
-        "level": level
-    })
-    # Keep only last 12 log lines
-    if len(st.session_state.log_lines) > 12:
-        st.session_state.log_lines = st.session_state.log_lines[-12:]
-
-
-def simulate_transaction(mode: str) -> dict:
-    """
-    Simulates a full transaction for demo purposes.
-    mode: 'human' | 'attack' | 'threat'
-    """
+def sim_txn(mode: str) -> dict:
     if mode == "human":
-        risk_score = random.randint(12, 28)
-        decision   = "APPROVED"
-        tremor     = generate_demo_tremor(True)
-        threats    = []
+        rs = random.randint(11, 27)
+        dec = "APPROVED"
+        sig = gen_tremor(True)
+        th  = []
+        cr  = 0
     elif mode == "attack":
-        risk_score = random.randint(78, 96)
-        decision   = "BLOCKED"
-        tremor     = generate_demo_tremor(False)
-        threats    = []
-    else:  # threat — AnyDesk running
-        risk_score = random.randint(72, 90)
-        decision   = "BLOCKED"
-        tremor     = generate_demo_tremor(True)
-        threats    = ["AnyDesk"]
+        rs = random.randint(76, 95)
+        dec = "BLOCKED"
+        sig = gen_tremor(False)
+        th  = []
+        cr  = 0
+    else:
+        rs = random.randint(72, 88)
+        dec = "BLOCKED"
+        sig = gen_tremor(True)
+        th  = ["AnyDesk"]
+        cr  = 40
 
+    tr = max(0, min(50, rs - int(cr/2)))
     return {
-        "risk_score":     risk_score,
-        "decision":       decision,
-        "tremor_signal":  tremor,
-        "threats":        threats,
+        "risk_score":     rs,
+        "decision":       dec,
+        "tremor_signal":  sig,
+        "threats":        th,
         "transaction_id": f"TXN{random.randint(100,999)}",
-        "amount":         random.choice([1000, 2500, 5000, 10000, 25000]),
-        "token":          ''.join(random.choices('0123456789abcdef', k=16)) + "...",
+        "amount":         random.choice([1000,2500,5000,10000,25000]),
+        "token":          ''.join(random.choices('0123456789abcdef',k=16))+"...",
         "components": {
-            "tremor_risk":  int(risk_score * 0.5) if mode != "attack" else 50,
-            "context_risk": 40 if threats else 0,
-            "tilt_risk":    random.randint(0, 3)
+            "tremor_risk":  tr,
+            "context_risk": cr,
+            "tilt_risk":    random.randint(0,3)
         }
     }
 
 
-# ─────────────────────────────────────────────────────
-# FFT CHART — the live tremor spectrum graph
-# ─────────────────────────────────────────────────────
-def build_fft_chart(signal: np.ndarray, decision: str) -> go.Figure:
-    freqs, spectrum = compute_fft_spectrum(signal)
-
-    # Color based on decision
-    line_color = "#534AB7" if decision == "APPROVED" else "#FF6B7A"
-    fill_color = "rgba(83,74,183,0.15)" if decision == "APPROVED" else "rgba(255,107,122,0.15)"
-    band_color = "rgba(83,74,183,0.08)" if decision == "APPROVED" else "rgba(255,107,122,0.08)"
+# ────────────────────────────────────────────
+# CHARTS
+# ────────────────────────────────────────────
+def fft_chart(sig: np.ndarray, decision: str) -> go.Figure:
+    fr, sp = fft_spectrum(sig)
+    approved = decision == "APPROVED"
+    lc = "#534AB7" if approved else "#FF4757"
+    fc = "rgba(83,74,183,0.13)" if approved else "rgba(255,71,87,0.13)"
+    bc = "rgba(83,74,183,0.07)" if approved else "rgba(255,71,87,0.07)"
 
     fig = go.Figure()
-
-    # Highlight the 8-12Hz biological tremor band
-    fig.add_shape(
-        type="rect",
-        x0=8, x1=12, y0=0, y1=1.05,
-        fillcolor=band_color,
-        line=dict(color=line_color, width=0.5, dash="dot"),
-        layer="below"
-    )
-
-    # The FFT spectrum line
+    fig.add_shape(type="rect", x0=8, x1=12, y0=0, y1=1.05,
+                  fillcolor=bc,
+                  line=dict(color=lc, width=0.8, dash="dot"),
+                  layer="below")
     fig.add_trace(go.Scatter(
-        x=freqs,
-        y=spectrum,
-        mode="lines",
-        line=dict(color=line_color, width=1.8, shape="spline"),
-        fill="tozeroy",
-        fillcolor=fill_color,
+        x=fr, y=sp, mode="lines",
+        line=dict(color=lc, width=1.8, shape="spline"),
+        fill="tozeroy", fillcolor=fc,
         hovertemplate="<b>%{x:.1f} Hz</b><br>Power: %{y:.3f}<extra></extra>"
     ))
-
-    # Label the tremor band
-    fig.add_annotation(
-        x=10, y=1.02,
-        text="8–12 Hz  biological band",
+    fig.add_annotation(x=10, y=1.04,
+        text="8–12 Hz  biological tremor band",
         showarrow=False,
-        font=dict(size=10, color=line_color),
-        xanchor="center"
-    )
-
+        font=dict(size=9.5, color=lc), xanchor="center")
     fig.update_layout(
-        plot_bgcolor  = "rgba(0,0,0,0)",
-        paper_bgcolor = "rgba(0,0,0,0)",
-        margin        = dict(l=0, r=0, t=10, b=30),
-        height        = 160,
-        xaxis=dict(
-            title     = "Frequency (Hz)",
-            range     = [0, 25],
-            color     = "rgba(232,230,240,0.3)",
-            showgrid  = True,
-            gridcolor = "rgba(255,255,255,0.04)",
-            tickfont  = dict(size=10),
-            title_font= dict(size=10)
-        ),
-        yaxis=dict(
-            range     = [0, 1.1],
-            color     = "rgba(232,230,240,0.3)",
-            showgrid  = True,
-            gridcolor = "rgba(255,255,255,0.04)",
-            tickfont  = dict(size=10)
-        ),
-        showlegend = False
-    )
-    return fig
-
-
-# ─────────────────────────────────────────────────────
-# GAUGE CHART — the risk score dial
-# ─────────────────────────────────────────────────────
-def build_gauge(risk_score: int) -> go.Figure:
-    if risk_score < 30:
-        color = "#1D9E75"
-        label = "Safe zone"
-    elif risk_score < 70:
-        color = "#FFB347"
-        label = "Caution zone"
-    else:
-        color = "#FF4757"
-        label = "Danger zone"
-
-    fig = go.Figure(go.Indicator(
-        mode  = "gauge+number",
-        value = risk_score,
-        number= dict(
-            font=dict(size=36, color="#E8E6F0", family="Inter"),
-            suffix=""
-        ),
-        gauge = dict(
-            axis=dict(
-                range    = [0, 100],
-                tickcolor= "rgba(232,230,240,0.2)",
-                tickfont = dict(size=9, color="rgba(232,230,240,0.3)"),
-                dtick    = 25
-            ),
-            bar=dict(
-                color    = color,
-                thickness= 0.25
-            ),
-            bgcolor   = "rgba(0,0,0,0)",
-            bordercolor="rgba(0,0,0,0)",
-            steps=[
-                dict(range=[0,  30], color="rgba(29,158,117,0.08)"),
-                dict(range=[30, 70], color="rgba(255,179,71,0.08)"),
-                dict(range=[70,100], color="rgba(255,71,87,0.08)")
-            ],
-            threshold=dict(
-                line=dict(color=color, width=2),
-                thickness=0.8,
-                value=risk_score
-            )
-        )
-    ))
-
-    fig.update_layout(
-        paper_bgcolor = "rgba(0,0,0,0)",
-        plot_bgcolor  = "rgba(0,0,0,0)",
-        margin        = dict(l=10, r=10, t=10, b=0),
-        height        = 170,
-        font          = dict(family="Inter", color="#E8E6F0")
-    )
-    return fig
-
-
-# ─────────────────────────────────────────────────────
-# RISK HISTORY CHART — sparkline of last 10 scores
-# ─────────────────────────────────────────────────────
-def build_history_chart(history: list) -> go.Figure:
-    if not history:
-        history = [0]
-    x = list(range(len(history)))
-    colors = ["#1D9E75" if s < 30 else "#FFB347" if s < 70 else "#FF4757" for s in history]
-
-    fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x=x, y=history,
-        marker_color=colors,
-        hovertemplate="Transaction %{x}<br>Risk: %{y}<extra></extra>"
-    ))
-    fig.update_layout(
-        paper_bgcolor = "rgba(0,0,0,0)",
-        plot_bgcolor  = "rgba(0,0,0,0)",
-        margin        = dict(l=0, r=0, t=0, b=0),
-        height        = 80,
-        xaxis=dict(visible=False),
-        yaxis=dict(
-            range=[0, 100],
-            color="rgba(232,230,240,0.2)",
-            tickfont=dict(size=8),
-            gridcolor="rgba(255,255,255,0.04)"
-        ),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor ="rgba(0,0,0,0)",
+        margin=dict(l=0,r=0,t=16,b=28), height=155,
+        xaxis=dict(range=[0,25], color="rgba(232,230,240,0.25)",
+                   showgrid=True, gridcolor="rgba(255,255,255,0.04)",
+                   tickfont=dict(size=9), title="Frequency (Hz)",
+                   title_font=dict(size=9)),
+        yaxis=dict(range=[0,1.1], color="rgba(232,230,240,0.25)",
+                   showgrid=True, gridcolor="rgba(255,255,255,0.04)",
+                   tickfont=dict(size=9)),
         showlegend=False
     )
     return fig
 
 
-# ─────────────────────────────────────────────────────
-# MAIN DASHBOARD LAYOUT
-# ─────────────────────────────────────────────────────
-def render_dashboard():
+def gauge_chart(score: int) -> go.Figure:
+    if score < 30:
+        color = "#1D9E75"
+    elif score < 70:
+        color = "#FFB347"
+    else:
+        color = "#FF4757"
+
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=score,
+        number=dict(font=dict(size=38, color="#E8E6F0",
+                              family="Inter"), suffix=""),
+        gauge=dict(
+            axis=dict(range=[0,100],
+                      tickcolor="rgba(232,230,240,0.15)",
+                      tickfont=dict(size=9,
+                                    color="rgba(232,230,240,0.25)"),
+                      dtick=25),
+            bar=dict(color=color, thickness=0.22),
+            bgcolor="rgba(0,0,0,0)",
+            bordercolor="rgba(0,0,0,0)",
+            steps=[
+                dict(range=[0,30],  color="rgba(29,158,117,0.07)"),
+                dict(range=[30,70], color="rgba(255,179,71,0.07)"),
+                dict(range=[70,100],color="rgba(255,71,87,0.07)")
+            ],
+            threshold=dict(
+                line=dict(color=color, width=2),
+                thickness=0.82, value=score)
+        )
+    ))
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor ="rgba(0,0,0,0)",
+        margin=dict(l=10,r=10,t=8,b=0),
+        height=175,
+        font=dict(family="Inter", color="#E8E6F0")
+    )
+    return fig
+
+
+def history_chart(hist: list) -> go.Figure:
+    if not hist:
+        hist = [0]
+    colors = ["#1D9E75" if s<30 else "#FFB347" if s<70
+              else "#FF4757" for s in hist]
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=list(range(len(hist))), y=hist,
+        marker_color=colors,
+        hovertemplate="Txn %{x}<br>Risk: %{y}<extra></extra>"
+    ))
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor ="rgba(0,0,0,0)",
+        margin=dict(l=0,r=0,t=0,b=0), height=75,
+        xaxis=dict(visible=False),
+        yaxis=dict(range=[0,100],
+                   color="rgba(232,230,240,0.2)",
+                   tickfont=dict(size=8),
+                   gridcolor="rgba(255,255,255,0.04)"),
+        showlegend=False
+    )
+    return fig
+
+
+# ────────────────────────────────────────────
+# PROCESS TRANSACTION RESULT → dashboard format
+# ────────────────────────────────────────────
+def process_result(result: dict, mode: str):
+    human = result["decision"] != "BLOCKED"
+    dr = {
+        "risk_score":     result["risk_score"],
+        "decision":       result["decision"],
+        "tremor_signal":  gen_tremor(human),
+        "threats":        result.get("components",{}).get("threats",
+                          result.get("threats",[])),
+        "transaction_id": result.get("transaction_id","TXN_LIVE"),
+        "amount":         result.get("amount", 5000),
+        "token":          result.get("token","N/A"),
+        "components":     result.get("components",{
+                              "tremor_risk":50,
+                              "context_risk":0,
+                              "tilt_risk":0
+                          })
+    }
+    st.session_state.last_result = dr
+    st.session_state.txn_count  += 1
+    st.session_state.risk_history.append(result["risk_score"])
+    if result["decision"] == "APPROVED":
+        st.session_state.approved += 1
+    else:
+        st.session_state.blocked  += 1
+
+
+# ────────────────────────────────────────────
+# MAIN RENDER
+# ────────────────────────────────────────────
+def render():
+    r = st.session_state.last_result
 
     # ── HEADER ──
-    st.markdown(f"""
-    <div class="ml-header">
-        <div class="ml-logo">
-            🔐 MorphoLock
-            <span class="ml-logo-sub">Behavioral Attestation Framework · MNNIT Hackathon 2026</span>
-        </div>
-        <div style="display:flex;align-items:center;gap:12px">
-            <span style="font-size:11px;color:rgba(232,230,240,0.3)">
-                {datetime.now().strftime("%d %b %Y  %H:%M:%S")}
+    hcol1, hcol2 = st.columns([1, 10])
+    with hcol1:
+        if LOTTIE_OK:
+            ld = load_lottie(
+                "https://assets5.lottiefiles.com/packages/lf20_ystsffqy.json")
+            if ld:
+                st_lottie(ld, height=52, width=52,
+                          key="shield", speed=0.7)
+    with hcol2:
+        st.markdown(f"""
+        <div class="ml-header">
+          <div class="ml-logo">🔐 MorphoLock
+            <span class="ml-logo-sub">
+              Behavioral Attestation Framework &nbsp;·&nbsp; MNNIT Hackathon 2026
+            </span>
+          </div>
+          <div style="display:flex;align-items:center;gap:14px">
+            <span style="font-size:11px;color:rgba(232,230,240,0.25)">
+              {datetime.now().strftime("%d %b %Y &nbsp; %H:%M:%S")}
             </span>
             <div class="live-pill">
-                <div class="live-dot"></div>
-                System Active
+              <div class="live-dot"></div>System Active
             </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+          </div>
+        </div>""", unsafe_allow_html=True)
 
     # ── STAT BAR ──
-    approval_rate = (
-        round(st.session_state.approved_count /
-              st.session_state.transaction_count * 100)
-        if st.session_state.transaction_count > 0 else 0
-    )
-    avg_risk = (
-        round(np.mean(st.session_state.risk_history))
-        if st.session_state.risk_history else 0
-    )
+    tc = st.session_state.txn_count
+    ap = st.session_state.approved
+    bl = st.session_state.blocked
+    rh = st.session_state.risk_history
+    ar = round(ap/tc*100) if tc else 0
+    avg= round(np.mean(rh)) if rh else 0
 
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        st.markdown(f"""<div class="stat-card">
-            <div class="stat-label">Transactions</div>
-            <div class="stat-value">{st.session_state.transaction_count}</div>
-            <div class="stat-sub">This session</div>
-        </div>""", unsafe_allow_html=True)
-    with c2:
-        st.markdown(f"""<div class="stat-card">
-            <div class="stat-label">Approved</div>
-            <div class="stat-value" style="color:#4ECFA0">{st.session_state.approved_count}</div>
-            <div class="stat-sub">{approval_rate}% approval rate</div>
-        </div>""", unsafe_allow_html=True)
-    with c3:
-        st.markdown(f"""<div class="stat-card">
-            <div class="stat-label">Blocked</div>
-            <div class="stat-value" style="color:#FF6B7A">{st.session_state.blocked_count}</div>
-            <div class="stat-sub">Attacks caught</div>
-        </div>""", unsafe_allow_html=True)
-    with c4:
-        st.markdown(f"""<div class="stat-card">
-            <div class="stat-label">Avg risk score</div>
-            <div class="stat-value">{avg_risk}</div>
-            <div class="stat-sub">Session average</div>
-        </div>""", unsafe_allow_html=True)
+    s1,s2,s3,s4 = st.columns(4)
+    for col, label, val, sub, color in [
+        (s1, "Transactions",  tc,  "This session",         "#E8E6F0"),
+        (s2, "Approved",      ap,  f"{ar}% approval rate", "#4ECFA0"),
+        (s3, "Blocked",       bl,  "Attacks caught",       "#FF6B7A"),
+        (s4, "Avg risk score",avg, "Session average",      "#E8E6F0"),
+    ]:
+        with col:
+            st.markdown(f"""
+            <div class="stat-card">
+              <div class="stat-label">{label}</div>
+              <div class="stat-value" style="color:{color}">{val}</div>
+              <div class="stat-sub">{sub}</div>
+            </div>""", unsafe_allow_html=True)
 
-    st.markdown("<div style='margin-top:4px'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='margin-top:6px'></div>",
+                unsafe_allow_html=True)
 
-    # ── MAIN CONTENT ──
-    left, right = st.columns([2, 1], gap="medium")
+    # ── MAIN COLUMNS ──
+    left, right = st.columns([2.2, 1], gap="medium")
 
     with left:
-
-        # FFT spectrum card
-        st.markdown('<div class="section-label">Live tremor spectrum — FFT analysis</div>',
+        # FFT graph
+        st.markdown('<div class="sec-label">Live tremor spectrum — FFT analysis</div>',
                     unsafe_allow_html=True)
+        sig  = r["tremor_signal"] if r else gen_tremor(True)
+        dec  = r["decision"]      if r else "APPROVED"
+        st.plotly_chart(fft_chart(sig, dec),
+                        use_container_width=True,
+                        config={"displayModeBar":False})
 
-        result = st.session_state.last_result
-        if result:
-            signal   = result["tremor_signal"]
-            decision = result["decision"]
-        else:
-            signal   = generate_demo_tremor(True)
-            decision = "APPROVED"
-
-        st.plotly_chart(
-            build_fft_chart(signal, decision),
-            use_container_width=True,
-            config={"displayModeBar": False}
-        )
-
-        # Risk score history sparkline
-        if st.session_state.risk_history:
-            st.markdown('<div class="section-label" style="margin-top:4px">Risk score history — last 10 transactions</div>',
+        # Risk history
+        if rh:
+            st.markdown('<div class="sec-label" '
+                        'style="margin-top:2px">'
+                        'Risk score history</div>',
                         unsafe_allow_html=True)
-            st.plotly_chart(
-                build_history_chart(st.session_state.risk_history[-10:]),
-                use_container_width=True,
-                config={"displayModeBar": False}
-            )
+            st.plotly_chart(history_chart(rh[-10:]),
+                            use_container_width=True,
+                            config={"displayModeBar":False})
 
         # Transaction details
-        if result:
-            st.markdown('<div class="section-label" style="margin-top:4px">Transaction details</div>',
+        if r:
+            st.markdown('<div class="sec-label" '
+                        'style="margin-top:4px">'
+                        'Transaction details</div>',
                         unsafe_allow_html=True)
-
             d1, d2 = st.columns(2)
             with d1:
                 st.markdown(f"""
-                <div class="txn-row"><span class="txn-key">Transaction ID</span>
-                    <span class="txn-val">{result['transaction_id']}</span></div>
-                <div class="txn-row"><span class="txn-key">Amount</span>
-                    <span class="txn-val">₹{result['amount']:,}</span></div>
-                <div class="txn-row"><span class="txn-key">Token</span>
-                    <span class="txn-val" style="font-size:10px">{result['token']}</span></div>
+                <div class="txn-row">
+                  <span class="txn-key">Transaction ID</span>
+                  <span class="txn-val">{r['transaction_id']}</span>
+                </div>
+                <div class="txn-row">
+                  <span class="txn-key">Amount</span>
+                  <span class="txn-val">₹{r['amount']:,}</span>
+                </div>
+                <div class="txn-row">
+                  <span class="txn-key">Token</span>
+                  <span class="txn-val"
+                    style="font-size:10px">{r['token']}</span>
+                </div>
+                <div class="txn-row">
+                  <span class="txn-key">Timestamp</span>
+                  <span class="txn-val">
+                    {datetime.now().strftime('%H:%M:%S')}
+                  </span>
+                </div>
                 """, unsafe_allow_html=True)
             with d2:
-                comp = result["components"]
-                for name, val, maxval, color in [
-                    ("Tremor",  comp["tremor_risk"],  50, "#534AB7"),
-                    ("Context", comp["context_risk"], 40, "#1D9E75"),
-                    ("Tilt",    comp["tilt_risk"],    10, "#D85A30")
+                comp = r["components"]
+                for nm, val, mx, clr in [
+                    ("Tremor",  comp.get("tremor_risk",0),  50, "#534AB7"),
+                    ("Context", comp.get("context_risk",0), 40, "#1D9E75"),
+                    ("Tilt",    comp.get("tilt_risk",0),    10, "#D85A30"),
                 ]:
-                    pct = int(val / maxval * 100)
+                    pct = int(val/mx*100)
                     st.markdown(f"""
-                    <div style="margin-bottom:8px">
-                        <div style="display:flex;justify-content:space-between;
-                            font-size:10px;color:rgba(232,230,240,0.4);margin-bottom:3px">
-                            <span>{name}</span>
-                            <span>{val} / {maxval}</span>
+                    <div style="margin-bottom:7px">
+                      <div style="display:flex;justify-content:space-between;
+                          font-size:10px;color:rgba(232,230,240,0.35);
+                          margin-bottom:2px">
+                        <span>{nm}</span><span>{val}/{mx}</span>
+                      </div>
+                      <div class="cb-wrap">
+                        <div class="cb-fill"
+                          style="width:{pct}%;background:{clr}">
                         </div>
-                        <div class="comp-bar-wrap">
-                            <div class="comp-bar-fill"
-                                style="width:{pct}%;background:{color}"></div>
-                        </div>
+                      </div>
                     </div>""", unsafe_allow_html=True)
 
             # Threat status
-            if result["threats"]:
+            if r["threats"]:
                 st.markdown(f"""<div class="threat-found">
-                    ⚠ Threats detected: {', '.join(result['threats'])}
+                  ⚠ &nbsp;Threats: {', '.join(r['threats'])}
                 </div>""", unsafe_allow_html=True)
             else:
                 st.markdown("""<div class="threat-clear">
-                    ✓ Environment clear — no screen-sharing detected
+                  ✓ &nbsp;Environment clear — no screen-sharing detected
                 </div>""", unsafe_allow_html=True)
 
     with right:
-
-        # Risk gauge
-        st.markdown('<div class="section-label">Risk score</div>',
+        # Gauge with pulse rings
+        st.markdown('<div class="sec-label">Risk score</div>',
                     unsafe_allow_html=True)
-        risk_val = result["risk_score"] if result else 0
-        st.plotly_chart(
-            build_gauge(risk_val),
-            use_container_width=True,
-            config={"displayModeBar": False}
-        )
+        score = r["risk_score"] if r else 0
+        ring_class = ("pulse-ring-green" if score < 30
+                      else "pulse-ring-red" if score >= 70
+                      else "")
+        st.markdown(f"""
+        <div class="gauge-wrap">
+          <div class="pulse-ring {ring_class}"></div>
+          <div class="pulse-ring pulse-ring-2 {ring_class}"></div>
+        </div>""", unsafe_allow_html=True)
+        st.plotly_chart(gauge_chart(score),
+                        use_container_width=True,
+                        config={"displayModeBar":False})
 
         # Decision box
-        if result:
-            dec = result["decision"]
-            if dec == "APPROVED":
-                st.markdown("""<div class="decision-approved">
-                    <div class="decision-title" style="color:#4ECFA0">✓ Approved</div>
-                    <div class="decision-sub">HMAC token verified by bank</div>
+        if r:
+            d = r["decision"]
+            if d == "APPROVED":
+                st.markdown("""<div class="dec-approved">
+                  <div class="dec-title" style="color:#4ECFA0">
+                    ✓ &nbsp;Transaction Approved</div>
+                  <div class="dec-sub">HMAC token verified by bank</div>
                 </div>""", unsafe_allow_html=True)
-            elif dec == "BLOCKED":
-                st.markdown("""<div class="decision-blocked">
-                    <div class="decision-title" style="color:#FF6B7A">✗ Blocked</div>
-                    <div class="decision-sub">High risk — transaction rejected</div>
+            elif d == "BLOCKED":
+                st.markdown("""<div class="dec-blocked">
+                  <div class="dec-title" style="color:#FF6B7A">
+                    ✗ &nbsp;Transaction Blocked</div>
+                  <div class="dec-sub">High risk — rejected</div>
                 </div>""", unsafe_allow_html=True)
             else:
-                st.markdown("""<div class="decision-stepup">
-                    <div class="decision-title" style="color:#FFB347">⚡ Step-up</div>
-                    <div class="decision-sub">Additional verification required</div>
+                st.markdown("""<div class="dec-stepup">
+                  <div class="dec-title" style="color:#FFB347">
+                    ⚡ &nbsp;Step-up Required</div>
+                  <div class="dec-sub">Additional verification needed</div>
                 </div>""", unsafe_allow_html=True)
 
-        st.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
-
         # System log
-        st.markdown('<div class="section-label">System log</div>',
+        st.markdown('<div class="sec-label" '
+                    'style="margin-top:14px">System log</div>',
                     unsafe_allow_html=True)
-
         log_html = ""
-        for line in reversed(st.session_state.log_lines[-10:]):
-            css_class = {
-                "success": "log-success",
-                "warning": "log-warning",
-                "error":   "log-error"
-            }.get(line["level"], "")
-            log_html += f"""<div class="log-line {css_class}">
-                <span style="color:rgba(232,230,240,0.25)">{line['time']}</span>
-                &nbsp;&nbsp;{line['msg']}
-            </div>"""
-
+        for ln in reversed(
+                st.session_state.log_lines[-12:]):
+            css = {"success":"log-ok",
+                   "warning":"log-warn",
+                   "error":"log-err"}.get(ln["level"],"")
+            log_html += (
+                f'<div class="log-line {css}">'
+                f'<span style="color:rgba(232,230,240,0.2)">'
+                f'{ln["ts"]}</span>&nbsp;&nbsp;{ln["msg"]}</div>'
+            )
         st.markdown(
-            f'<div style="height:200px;overflow-y:auto">{log_html}</div>',
-            unsafe_allow_html=True
-        )
-
-    st.markdown("<div style='margin-top:8px'></div>", unsafe_allow_html=True)
-    st.markdown("---")
+            f'<div class="log-wrap">{log_html}</div>',
+            unsafe_allow_html=True)
 
     # ── DEMO CONTROLS ──
-    st.markdown('<div class="section-label">Demo controls — simulate transactions</div>',
+    st.markdown("<div style='margin-top:10px'></div>",
+                unsafe_allow_html=True)
+    st.markdown("---")
+    st.markdown('<div class="sec-label">Demo controls</div>',
                 unsafe_allow_html=True)
 
-    b1, b2, b3, _ = st.columns([1, 1, 1, 2])
+    b1, b2, b3, b4 = st.columns(4)
 
     with b1:
-        if st.button("✋ Human transaction", use_container_width=True):
-            result = simulate_transaction("human")
-            st.session_state.last_result = result
-            st.session_state.transaction_count += 1
-            st.session_state.approved_count    += 1
-            st.session_state.risk_history.append(result["risk_score"])
+        if st.button("✋  Human transaction",
+                     use_container_width=True):
+            res = sim_txn("human")
+            process_result(res, "human")
             add_log("Transaction initiated", "info")
-            add_log("200 sensor samples collected", "info")
-            add_log(f"FFT computed — peak at ~10Hz", "info")
-            add_log(f"Risk score: {result['risk_score']}/100", "info")
+            add_log("200 samples collected at 100Hz", "info")
+            add_log(f"FFT — peak at ~10Hz detected", "info")
+            add_log(f"Tremor match: CONFIRMED", "info")
             add_log("Environment: CLEAR", "info")
-            add_log(f"APPROVED — token generated ✓", "success")
+            add_log(f"Risk score: {res['risk_score']}/100", "info")
+            add_log("APPROVED — HMAC token generated ✓", "success")
             st.rerun()
 
     with b2:
-        if st.button("💻 Replay attack", use_container_width=True):
-            result = simulate_transaction("attack")
-            st.session_state.last_result = result
-            st.session_state.transaction_count += 1
-            st.session_state.blocked_count     += 1
-            st.session_state.risk_history.append(result["risk_score"])
+        if st.button("💻  Replay attack",
+                     use_container_width=True):
+            res = sim_txn("attack")
+            process_result(res, "attack")
             add_log("Transaction initiated", "info")
-            add_log("Sensor data received", "info")
-            add_log("FFT computed — 0Hz flat signal detected", "warning")
-            add_log(f"Risk score: {result['risk_score']}/100", "warning")
-            add_log("NO biological tremor — hardware idle", "error")
+            add_log("Data received from pipeline", "info")
+            add_log("FFT — 0Hz flat signal (no tremor)", "warning")
+            add_log("Hardware idle — no human contact", "warning")
+            add_log(f"Risk score: {res['risk_score']}/100", "warning")
             add_log("BLOCKED — software replay detected ✗", "error")
             st.rerun()
 
     with b3:
-        if st.button("📡 Screen-share threat", use_container_width=True):
-            result = simulate_transaction("threat")
-            st.session_state.last_result = result
-            st.session_state.transaction_count += 1
-            st.session_state.blocked_count     += 1
-            st.session_state.risk_history.append(result["risk_score"])
+        if st.button("📡  Screen-share threat",
+                     use_container_width=True):
+            res = sim_txn("threat")
+            process_result(res, "threat")
             add_log("Transaction initiated", "info")
-            add_log("200 sensor samples collected", "info")
-            add_log("FFT computed — tremor detected", "info")
-            add_log("THREAT: AnyDesk running — APP scam risk", "error")
-            add_log(f"Risk score: {result['risk_score']}/100", "warning")
+            add_log("200 samples collected", "info")
+            add_log("Tremor detected — human present", "info")
+            add_log("THREAT: AnyDesk active — APP scam", "error")
+            add_log(f"Risk score: {res['risk_score']}/100", "warning")
             add_log("BLOCKED — screen-share detected ✗", "error")
             st.rerun()
 
+    with b4:
+        if st.button("🔴  Live sensor",
+                     use_container_width=True,
+                     type="primary"):
+            with st.spinner(
+                    "Hold the sensor... reading 2 seconds"):
+                try:
+                    from dashboard.main_pipeline import (
+                        run_transaction)
+                    res = run_transaction("TXN_LIVE", 5000.0)
+                    process_result(res, "live")
+                    add_log("LIVE hardware transaction", "info")
+                    add_log(
+                        f"Decision: {res['decision']}",
+                        "success" if res["decision"] == "APPROVED"
+                        else "error")
+                    st.rerun()
+                except Exception as e:
+                    add_log(f"Hardware error: {str(e)}", "error")
+                    st.rerun()
 
-# ─────────────────────────────────────────────────────
-# ENTRY POINT
-# ─────────────────────────────────────────────────────
-render_dashboard()
+
+render()
