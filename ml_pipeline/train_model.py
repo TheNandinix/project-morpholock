@@ -7,6 +7,7 @@ from signal_processor import extract_features
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 def train(csv_folder, output_path):
     files = glob.glob(os.path.join(csv_folder, '*.csv'))
     logger.info(f'Found {len(files)} CSV files')
@@ -20,15 +21,12 @@ def train(csv_folder, output_path):
             if feat is not None:
                 features.append(feat)
         except Exception as e:
-            logger.warning(f'Skipped {f}: {e}')
+            print(f'SKIPPED {f}: {e}')
 
     X = np.array(features)
     logger.info(f'Training on {len(X)} sequences')
 
-    model = IsolationForest(
-        n_estimators=100,
-        contamination=0.05,
-        random_state=42)
+    model = IsolationForest(n_estimators=100, contamination=0.05, random_state=42)
     model.fit(X)
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -38,7 +36,8 @@ def train(csv_folder, output_path):
 
 
 if __name__ == '__main__':
-    train(
-        csv_folder='data/raw_recordings',
-        output_path='models/morpholock_model.pkl'
-    )
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(base_dir)
+    csv_folder = os.path.join(project_root, 'data', 'raw_recordings')
+    output_path = os.path.join(project_root, 'models', 'morpholock_model.pkl')
+    train(csv_folder, output_path)
