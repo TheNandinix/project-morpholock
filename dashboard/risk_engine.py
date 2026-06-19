@@ -1,3 +1,4 @@
+from attempt_tracker import get_attempt_status, record_attempt_result
 import numpy as np
 import joblib
 import logging
@@ -36,7 +37,36 @@ model = load_model()
 # ─────────────────────────────────────────
 # MAIN FUNCTION — computes the risk score
 # ─────────────────────────────────────────
-def compute_risk_score(sensor_window: list, context_result: dict) -> dict:
+def compute_risk_score(sensor_window: list, context_result: dict,
+                       user_id: str = "default_user") -> dict:
+    # ── PROGRESSIVE CRYPTOGRAPHIC RATCHETING ──
+    # Check if this user is currently in a hardening state
+    # BEFORE scoring the new transaction.
+    attempt_status = get_attempt_status(user_id)
+
+    if attempt_status["is_locked"]:
+        logger.critical(
+            f"Transaction rejected — user in HARD LOCKDOWN, "
+            f"{attempt_status['remaining_seconds']}s remaining"
+        )
+        return {
+            "risk_score": 100,
+            "decision": "BLOCKED",
+            "components": {
+                "tremor_risk": 0,
+                "context_risk": 0,
+                "tilt_risk": 0,
+                "threats": []
+            },
+            "hardening": {
+                "level": "HARD_LOCKDOWN",
+                "failed_attempts": attempt_status["failed_attempts"],
+                "remaining_seconds": attempt_status["remaining_seconds"],
+                "message": "Account temporarily locked due to repeated "
+                           "failed verification attempts. Secondary "
+                           "verification required to unlock."
+            }
+        }
     """
     Takes live sensor data and context scan result.
     Returns a risk score between 0 and 100 with a decision.
@@ -124,6 +154,26 @@ def compute_risk_score(sensor_window: list, context_result: dict) -> dict:
     logger.info(f"Risk Score: {total_risk}/100 → Decision: {decision}")
     if threats_found:
         logger.warning(f"Threats detected: {threats_found}")
+    # ── Record this attempt's outcome for future hardening ──
+    was_approved = (decision == "APPROVED")
+    record_attempt_result(user_id, was_approved)
+
+    # ── If user has accumulated soft-drift level failures,
+    #    escalate even a borderline APPROVED to STEP_UP ──
+    if (attempt_status["hardening_level"] == "SOFT_DRIFT"
+            and decision == "APPROVED" and total_risk > 15):
+        decision = "STEP_UP"
+        logger.warning(
+            "SOFT DRIFT active — escalating borderline approval "
+            "to STEP_UP as a precaution"
+        )
+
+    result["hardening"] = {
+        "level": attempt_status["hardening_level"],
+        "failed_attempts": attempt_status["failed_attempts"],
+        "remaining_seconds": 0,
+        "message": None
+    }
 
     return result
 
