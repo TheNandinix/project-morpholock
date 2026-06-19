@@ -93,14 +93,23 @@ def compute_risk_score(sensor_window: list, context_result: dict) -> dict:
     )
     total_risk = max(0, min(100, total_risk))
 
-    # ── Decision based on score ──
-    if total_risk < 30:
+    # CRITICAL OVERRIDE: any active threat detection is an automatic
+    # hard block, regardless of tremor or tilt score. This is because
+    # APP scams rely on the legitimate, willing user — biometric match
+    # does NOT make the transaction safe if a scammer is watching live.
+    if context_result.get("threats"):
+        decision = "BLOCKED"
+        total_risk = max(total_risk, 85)
+        logger.critical(
+            f"HARD BLOCK — active threat override: "
+            f"{context_result['threats']}"
+        )
+    elif total_risk < 30:
         decision = "APPROVED"
     elif total_risk < 70:
         decision = "STEP_UP"
     else:
         decision = "BLOCKED"
-
     result = {
         "risk_score"  : total_risk,
         "decision"    : decision,
