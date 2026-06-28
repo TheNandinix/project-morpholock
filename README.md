@@ -97,6 +97,33 @@ project-morpholock/
 
 ---
 
+## Configuration
+
+Before running, set the following:
+
+1. **Serial port** — `main_pipeline.py` defaults to `COM4`. Open Device Manager → 
+   Ports (COM & LPT) to find your actual port, and update the `SERIAL_PORT` 
+   variable at the top of `main_pipeline.py` accordingly.
+2. **HMAC secret key** — stored in `hardware/hmac_signing.ino` as `secret_key`. 
+   For your own deployment, regenerate this value and re-flash the Arduino 
+   before use; never reuse the key committed in this repository's history.
+3. **Model path** — place `morpholock_model.pkl` at `models/morpholock_model.pkl`. 
+   To train your own model from scratch, run `enroll_data.py` to capture your 
+   tremor signature, then `train_model.py` to train it.
+
+## Environment Requirements
+
+- Python 3.10.x
+- **scikit-learn==1.6.1 (required, exact version)** — the shipped model was 
+  trained on this version; mismatched versions produce load warnings
+- Arduino IDE 1.8.x or 2.x, with the MPU6050 library installed
+- Tested on Windows 11; should run on macOS/Linux with no code changes, 
+  but only Windows has been verified
+
+## License
+
+MIT License — see LICENSE file.
+
 ## Running the System
 
 ```bash
