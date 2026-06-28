@@ -3,7 +3,7 @@ import hashlib
 import time
 import logging
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -29,9 +29,9 @@ class VerifyRequest(BaseModel):
     token    = HMAC-SHA256 hex of that nonce, signed with SECRET_KEY
     timestamp = when the token was created (Unix ms)
     """
-    nonce: str
-    token: str
-    timestamp: int
+    nonce: str = Field(..., min_length=10, max_length=200)
+    token: str = Field(..., min_length=64, max_length=64)
+    timestamp: int = Field(..., gt=0)
 
 
 def compute_expected_hmac(nonce: str) -> str:
