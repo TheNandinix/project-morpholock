@@ -1,6 +1,6 @@
 """
 app.py — MorphoLock Live Dashboard
-Final production version
+Final phase 2 version
 Author: Nandini (Team Lead)
 Run: streamlit run dashboard/app.py
 """
@@ -14,6 +14,50 @@ from datetime import datetime
 import sys, os
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+
+# ── Channel configuration ──
+# Maps each banking channel to its real-world transaction format.
+# This demonstrates channel-agnostic architecture: the same
+# risk engine and HMAC signing pipeline works underneath all four,
+# only the presentation layer and nonce format change.
+CHANNELS = {
+    "UPI": {
+        "icon": "📱",
+        "nonce_label": "VPA + Amount + Timestamp",
+        "id_label": "VPA",
+        "id_example": "nandini@upi",
+        "sensor_context": "Phone IMU (Android SensorManager / iOS CoreMotion)",
+        "key_storage": "ARM TrustZone / Secure Enclave",
+        "description": "Real-time peer-to-peer transfer via UPI app"
+    },
+    "Mobile Banking": {
+        "icon": "🏦",
+        "nonce_label": "Account ID + Amount + Timestamp",
+        "id_label": "Account",
+        "id_example": "XXXX-XXXX-4821",
+        "sensor_context": "Phone IMU (Android SensorManager / iOS CoreMotion)",
+        "key_storage": "ARM TrustZone / Secure Enclave",
+        "description": "Fund transfer via bank's native mobile app"
+    },
+    "Internet Banking": {
+        "icon": "💻",
+        "nonce_label": "Session ID + Amount + Timestamp",
+        "id_label": "Session",
+        "id_example": "SESS-88421",
+        "sensor_context": "Paired mobile device (cross-device push attestation)",
+        "key_storage": "User's phone Secure Enclave",
+        "description": "Browser-based transfer, biometric confirmed via paired phone"
+    },
+    "ATM": {
+        "icon": "🏧",
+        "nonce_label": "Card Token + Amount + Timestamp",
+        "id_label": "Card",
+        "id_example": "**** **** **** 7734",
+        "sensor_context": "Encrypted PIN Pad (EPP) — embedded IMU",
+        "key_storage": "EPP hardware secure module",
+        "description": "Cash withdrawal at automated teller machine"
+    }
+}
 
 # ── Page config — must be first ──
 st.set_page_config(
@@ -508,7 +552,38 @@ def render():
             </div>
           </div>
         </div>""", unsafe_allow_html=True)
+    # ── Channel selector ──
+    st.markdown('<div class="sec-label" style="margin-top:4px">'
+                'Banking channel</div>', unsafe_allow_html=True)
 
+    chan_cols = st.columns(4)
+    if 'selected_channel' not in st.session_state:
+        st.session_state.selected_channel = "UPI"
+
+    for i, ch_name in enumerate(CHANNELS.keys()):
+        with chan_cols[i]:
+            ch = CHANNELS[ch_name]
+            is_active = st.session_state.selected_channel == ch_name
+            if st.button(
+                f"{ch['icon']}  {ch_name}",
+                key=f"chan_{ch_name}",
+                use_container_width=True,
+                type="primary" if is_active else "secondary"
+            ):
+                st.session_state.selected_channel = ch_name
+                st.rerun()
+
+    active_channel = CHANNELS[st.session_state.selected_channel]
+    st.markdown(f"""
+    <div style="font-size:10px;color:rgba(232,230,240,0.35);
+                margin:4px 0 10px;padding:8px 12px;
+                background:rgba(255,255,255,0.02);
+                border-radius:8px;line-height:1.6">
+        <b>{st.session_state.selected_channel}:</b> {active_channel['description']}
+        &nbsp;·&nbsp; Sensor: {active_channel['sensor_context']}
+        &nbsp;·&nbsp; Key storage: {active_channel['key_storage']}
+    </div>
+    """, unsafe_allow_html=True)
     # ── STAT BAR ──
     tc = st.session_state.txn_count
     ap = st.session_state.approved
