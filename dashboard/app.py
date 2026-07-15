@@ -338,6 +338,22 @@ def gen_tremor(human: bool = True) -> np.ndarray:
     return 0.002 * np.random.randn(200)
 
 
+def real_tremor_signal(sensor_window) -> np.ndarray:
+    """
+    Builds a single 1D wave from REAL captured Ax,Ay,Az data, purely
+    for the on-screen graph. This is NOT used for risk scoring —
+    that still happens per-axis in ml_pipeline/signal_processor.py.
+    We remove each axis's average (gravity / steady tilt) so the
+    small tremor oscillation is visible instead of being flattened
+    by the constant ~1g offset on the Z-axis.
+    """
+    data = np.array(sensor_window, dtype=float)
+    accel = data[:, :3]
+    accel_ac = accel - accel.mean(axis=0)
+    mag = np.sqrt(np.sum(accel_ac ** 2, axis=1))
+    return mag - mag.mean()
+
+
 def fft_spectrum(sig: np.ndarray):
     n = len(sig)
     fv = np.abs(np.fft.rfft(sig))
@@ -496,10 +512,15 @@ def history_chart(hist: list) -> go.Figure:
 # ────────────────────────────────────────────
 def process_result(result: dict, mode: str):
     human = result["decision"] != "BLOCKED"
+    real_window = result.get("sensor_window")
+    if real_window:
+        tremor_signal = real_tremor_signal(real_window)
+    else:
+        tremor_signal = gen_tremor(human)
     dr = {
         "risk_score":     result["risk_score"],
         "decision":       result["decision"],
-        "tremor_signal":  gen_tremor(human),
+        "tremor_signal":  tremor_signal,
         "threats":        result.get("components",{}).get("threats",
                           result.get("threats",[])),
         "transaction_id": result.get("transaction_id","TXN_LIVE"),
