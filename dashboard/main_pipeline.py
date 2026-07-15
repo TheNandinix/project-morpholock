@@ -245,7 +245,9 @@ def run_transaction(transaction_id: str, amount: float) -> dict:
             "threats"       : risk_result["components"]["threats"],
             "transaction_id": transaction_id,
             "amount"        : amount,
-            "nonce"         : nonce
+            "nonce"         : nonce,
+            "sensor_window" : window,
+            "components"    : risk_result["components"]
         }
 
     elif decision == "STEP_UP":
@@ -256,7 +258,9 @@ def run_transaction(transaction_id: str, amount: float) -> dict:
             "reason"        : "Additional verification required",
             "transaction_id": transaction_id,
             "amount"        : amount,
-            "nonce"         : nonce
+            "nonce"         : nonce,
+            "sensor_window" : window,
+            "components"    : risk_result["components"]
         }
 
     else:  # APPROVED
@@ -285,6 +289,7 @@ def run_transaction(transaction_id: str, amount: float) -> dict:
             "transaction_id": transaction_id,
             "amount"        : amount,
             "nonce"         : nonce,
+            "sensor_window" : window,
             "components"    : risk_result["components"]
         }
 
