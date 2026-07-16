@@ -155,8 +155,12 @@ def compute_risk_score(sensor_window: list, context_result: dict,
     if threats_found:
         logger.warning(f"Threats detected: {threats_found}")
     # ── Record this attempt's outcome for future hardening ──
-    was_approved = (decision == "APPROVED")
-    record_attempt_result(user_id, was_approved)
+    # Only a genuine BLOCKED counts as a "failed" attempt here.
+    # STEP_UP is a soft, graceful path (extra verification needed) —
+    # not a rejection — so it should not push a legitimate user
+    # toward a hard lockdown. Only real, rejected attempts should.
+    if decision in ("APPROVED", "BLOCKED"):
+        record_attempt_result(user_id, was_approved=(decision == "APPROVED"))
 
     # ── If user has accumulated soft-drift level failures,
     #    escalate even a borderline APPROVED to STEP_UP ──
