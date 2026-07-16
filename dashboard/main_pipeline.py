@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 COM_PORT         = "COM4"       # Kushagra's Arduino port
 BAUD_RATE        = 115200       # Must match Arduino firmware
 SAMPLES_NEEDED   = 200          # 2 seconds at 100Hz
-VERIFY_URL       = "http://localhost:8001/verify"  # Khushi's server
+VERIFY_URL       = "http://127.0.0.1:8001/verify"  # Khushi's server
 TOKEN_VALID_MS   = 2000         # Token expires after 2 seconds
 
 
@@ -180,8 +180,8 @@ def verify_with_server(nonce: str, token: str) -> dict:
         )
         return response.json()
 
-    except requests.exceptions.ConnectionError:
-        # Server not running — use mock instead
+    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+        # Server not running or too slow to respond — use mock instead
         logger.warning("Verification server not reachable — using mock")
         return mock_verify(nonce, token, timestamp_ms)
 
