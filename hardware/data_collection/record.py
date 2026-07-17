@@ -25,13 +25,17 @@ data = []
 while len(data) < TARGET_SAMPLES:
     try:
         line = ser.readline().decode(errors='ignore').strip()
-        values = line.split(",")
         
-        if len(values) != 6:  # Skip malformed lines
+        # Skip status messages
+        if not line or line.startswith("READY") or line.startswith("TOKEN") or line.startswith("STATUS"):
+            continue
+            
+        values = line.split(",")
+        if len(values) != 6:
             continue
             
         ax, ay, az, gx, gy, gz = values
-        data.append([int(ax), int(ay), int(az), int(gx), int(gy), int(gz)])
+        data.append([float(ax), float(ay), float(az), float(gx), float(gy), float(gz)])
     except:
         pass
 
