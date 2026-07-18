@@ -41,8 +41,11 @@ def _extract_axis_features(signal: np.ndarray,
     else:
         peak_freq = 0.0
 
-    # Feature 3 — total spectral power across all frequencies
-    total_power = float(np.sum(fft_vals ** 2))
+    # Feature 3 — total spectral power across all frequencies,
+    # EXCLUDING the 0Hz (DC/gravity) bin — that bin reflects the
+    # device's constant orientation, not motion, and its huge fixed
+    # size was swamping the genuinely useful tremor signal.
+    total_power = float(np.sum(fft_vals[1:] ** 2))
 
     # Feature 4 — low frequency macro-movement power (0.1-4Hz)
     low_power = float(np.sum(fft_vals[low_band] ** 2))
