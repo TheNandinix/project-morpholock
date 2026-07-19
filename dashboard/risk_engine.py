@@ -90,6 +90,7 @@ def compute_risk_score(sensor_window: list, context_result: dict,
             if features is not None:
                 # Isolation Forest score: more negative = more anomalous
                 raw_score = model.score_samples([features])[0]
+                logger.info(f"Raw model score (unscaled): {raw_score:.5f}")
                 # Convert to 0-50 risk scale
                 tremor_risk = max(0, min(50, int((-raw_score) * 100)))
             else:
