@@ -3,7 +3,7 @@ import hmac
 import hashlib
 import time
 
-SECRET_KEY = b"MORPHOLOCK_SECRET_2026"
+SECRET_KEY = b"MorphoLockSecretKey2026"
 SERVER = "http://127.0.0.1:8001"
 
 def make_token(nonce: str) -> str:
