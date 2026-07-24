@@ -44,17 +44,28 @@ TOKEN_VALID_MS   = 2000         # Token expires after 2 seconds
 
 
 # ─────────────────────────────────────────────────────
+# RISK SCORE SCALER (Added to map raw scores to 0-100)
+# ─────────────────────────────────────────────────────
+def scale_risk_score(raw_score: float) -> int:
+    """
+    Maps the raw Isolation Forest scores (e.g., 35 for holding, 46 for flat) 
+    to a clean 0-100 percentage scale for the UI and logic.
+    """
+    min_score = 35.0  # Safe/Holding baseline
+    max_score = 46.0  # Danger/Flat baseline
+    
+    # Calculate percentage
+    risk = ((raw_score - min_score) / (max_score - min_score)) * 100
+    
+    # Clip between 0 and 100 to prevent weird numbers
+    return int(max(0, min(100, risk)))
+
+
+# ─────────────────────────────────────────────────────
 # MOCK VERIFICATION
 # Temporary stand-in for Khushi's verification server
-# Used when her server is not running yet
-# When her server is ready — this function is never called
 # ─────────────────────────────────────────────────────
 def mock_verify(nonce: str, token: str, timestamp: int) -> dict:
-    """
-    Simulates what Khushi's verification server will do.
-    Accepts any token for now — just for testing.
-    DELETE this function once verification_server.py is running.
-    """
     logger.warning("Using MOCK verification — replace with real server later")
     return {
         "status": "APPROVED",
@@ -68,50 +79,33 @@ def mock_verify(nonce: str, token: str, timestamp: int) -> dict:
 # STEP 1 — READ SENSOR DATA FROM ARDUINO
 # ─────────────────────────────────────────────────────
 def collect_sensor_data(port: str = COM_PORT) -> list:
-    """
-    Opens serial connection to Arduino.
-    Reads exactly 200 lines of sensor data.
-    Each line = Ax,Ay,Az,Gx,Gy,Gz (6 float values)
-    Returns a list of 200 rows.
-    """
     logger.info(f"Connecting to Arduino on {port}...")
     window = []
 
     try:
-        # Open the serial port
-        # timeout=3 means: if no data arrives for 3 seconds, stop waiting
         ser = serial.Serial(port, BAUD_RATE, timeout=3)
-
-        # Wait 2 seconds — Arduino resets when serial opens
-        # If we don't wait, we read garbage data during the reset
         time.sleep(2)
-        ser.flushInput()  # Clear any leftover data from before
+        ser.flushInput()
         logger.info("Arduino connected. Collecting sensor data...")
 
-        # Keep reading lines until we have 200 clean ones
         while len(window) < SAMPLES_NEEDED:
             try:
-                # Read one line from Arduino
                 raw = ser.readline().decode('utf-8').strip()
-
-                # Skip status messages like "READY" or "STATUS:..."
                 if not raw or raw.startswith("READY") or raw.startswith("STATUS"):
                     continue
 
-                # Split "0.012,0.987,0.003,1.23,-0.45,0.01" into 6 values
                 parts = raw.split(",")
                 if len(parts) == 6:
                     row = [float(x) for x in parts]
                     window.append(row)
 
             except (ValueError, UnicodeDecodeError):
-                # Bad line — just skip it, don't crash
                 logger.debug("Skipped corrupted data line")
                 continue
 
         ser.close()
         logger.info(f"Collected {len(window)} sensor readings successfully")
-        return window, ser  # Return data and keep ser reference for signing
+        return window, ser
 
     except serial.SerialException as e:
         logger.error(f"Could not connect to Arduino on {port}: {e}")
@@ -123,30 +117,22 @@ def collect_sensor_data(port: str = COM_PORT) -> list:
 # STEP 2 — GET HMAC TOKEN FROM ARDUINO
 # ─────────────────────────────────────────────────────
 def request_signing(port: str, nonce: str) -> str:
-    """
-    Sends SIGN:nonce command to Arduino.
-    Arduino computes HMAC-SHA256 and replies TOKEN:hexstring.
-    Returns the hex token string.
-    """
     logger.info(f"Requesting HMAC signing for nonce: {nonce}")
 
     try:
         ser = serial.Serial(port, BAUD_RATE, timeout=3)
         time.sleep(1)
 
-        # Send the sign command
-        # encode() converts string to bytes — serial can only send bytes
         command = f"SIGN:{nonce}\n"
         ser.write(command.encode())
         logger.info(f"Sent command: {command.strip()}")
 
-        # Wait for Arduino's reply
         reply = ser.readline().decode('utf-8').strip()
         ser.close()
 
         if reply.startswith("TOKEN:"):
-            token = reply[6:]  # Remove "TOKEN:" prefix, keep the hex
-            logger.info(f"Token received: {token[:16]}...") # Log first 16 chars only
+            token = reply[6:]
+            logger.info(f"Token received: {token[:16]}...")
             return token
         else:
             logger.error(f"Unexpected reply from Arduino: {reply}")
@@ -161,14 +147,9 @@ def request_signing(port: str, nonce: str) -> str:
 # STEP 3 — VERIFY TOKEN WITH BANK SERVER
 # ─────────────────────────────────────────────────────
 def verify_with_server(nonce: str, token: str) -> dict:
-    """
-    Sends token to Khushi's verification server.
-    Falls back to mock if server is not running.
-    """
     timestamp_ms = int(time.time() * 1000)
 
     try:
-        # Try real server first
         response = requests.post(
             VERIFY_URL,
             json={
@@ -176,35 +157,23 @@ def verify_with_server(nonce: str, token: str) -> dict:
                 "token": token,
                 "timestamp": timestamp_ms
             },
-            timeout=2  # Don't wait more than 2 seconds
+            timeout=2 
         )
         return response.json()
 
     except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
-        # Server not running or too slow to respond — use mock instead
         logger.warning("Verification server not reachable — using mock")
         return mock_verify(nonce, token, timestamp_ms)
 
 
 # ─────────────────────────────────────────────────────
 # MASTER FUNCTION — run_transaction
-# This is the function the dashboard will call
 # ─────────────────────────────────────────────────────
 def run_transaction(transaction_id: str, amount: float) -> dict:
-    """
-    Full MorphoLock transaction pipeline.
-
-    transaction_id : unique ID e.g. "TXN001"
-    amount         : transaction amount e.g. 5000.0
-
-    Returns complete result dict with decision and all details.
-    """
     logger.info("=" * 50)
     logger.info(f"NEW TRANSACTION: {transaction_id} | Amount: ₹{amount}")
     logger.info("=" * 50)
 
-    # Build the nonce — this is the challenge the bank sends
-    # Format: TransactionID_Amount_Timestamp
     timestamp = int(time.time())
     nonce = f"{transaction_id}_{int(amount)}_{timestamp}"
     logger.info(f"Nonce generated: {nonce}")
@@ -219,21 +188,33 @@ def run_transaction(transaction_id: str, amount: float) -> dict:
             "transaction_id": transaction_id
         }
 
-    # ── STEP 2: Get context scan from Khushi's scanner ──
+    # ── STEP 2: Get context scan ──
     try:
         from cybersecurity.context_scanner import scan_environment
         context_result = scan_environment()
     except ImportError:
-        # Khushi's file not available yet — use empty context
         logger.warning("context_scanner.py not found — using empty context")
         context_result = {"risk_score": 0, "threats": [], "status": "UNKNOWN"}
 
-    # ── STEP 3: Compute risk score ──
+    # ── STEP 3: Compute risk score & Scale it ──
     risk_result = compute_risk_score(window, context_result)
-    risk_score = risk_result["risk_score"]
-    decision   = risk_result["decision"]
+    raw_risk_score = risk_result["risk_score"]
+    
+    # SCALE THE SCORE (maps 35-46 to 0-100)
+    risk_score = scale_risk_score(raw_risk_score)
+    risk_result["risk_score"] = risk_score
+    
+    # Overwrite the decision logic based on the shiny new 0-100 scale!
+    if risk_score > 70:
+        decision = "BLOCKED"
+    elif risk_score > 30:
+        decision = "STEP_UP"
+    else:
+        decision = "APPROVED"
+        
+    risk_result["decision"] = decision
 
-    logger.info(f"Risk Score: {risk_score}/100 → {decision}")
+    logger.info(f"Raw Score: {raw_risk_score:.2f} -> Mapped Risk Score: {risk_score}/100 → {decision}")
 
     # ── STEP 4: Branch based on decision ──
     if decision == "BLOCKED":
@@ -284,7 +265,7 @@ def run_transaction(transaction_id: str, amount: float) -> dict:
         return {
             "decision"      : final_status,
             "risk_score"    : risk_score,
-            "token"         : token[:16] + "...",  # Partial token for display
+            "token"         : token[:16] + "...",  
             "verification"  : verification,
             "transaction_id": transaction_id,
             "amount"        : amount,
@@ -295,8 +276,7 @@ def run_transaction(transaction_id: str, amount: float) -> dict:
 
 
 # ─────────────────────────────────────────────────────
-# TEST — run this file directly to test the pipeline
-# python dashboard/main_pipeline.py
+# TEST
 # ─────────────────────────────────────────────────────
 if __name__ == "__main__":
     print("\n── MorphoLock Pipeline Test ──\n")
