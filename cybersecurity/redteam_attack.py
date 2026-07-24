@@ -15,15 +15,47 @@ import logging
 import requests
 import hmac
 import hashlib
+import serial
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 SERVER = "http://127.0.0.1:8001"
 
-# Attacker somehow obtained the secret key (worst case scenario test)
-# Even with the key, the hardware gate should stop them
-STOLEN_KEY = b"MORPHOLOCK_SECRET_2026"
+# Secret key matching the updated server key
+STOLEN_KEY = b"MorphoLockSecretKey2026"
+ARDUINO_PORT = "COM4"
+
+
+def capture_flat_hardware_data(port: str, duration_seconds: int = 3) -> list:
+    """
+    Reads REAL live data from Arduino while it's lying flat on table.
+    This is the actual hardware input — not mock CSV.
+    duration_seconds = how long to capture (3 seconds = 300 samples at 100Hz)
+    """
+    data = []
+    try:
+        logger.info(f"Connecting to Arduino on {port}...")
+        ser = serial.Serial(port, 115200, timeout=2)
+        time.sleep(2)  # Wait for Arduino to initialize
+        
+        logger.info(f"Capturing {duration_seconds} seconds of flat device data...")
+        start = time.time()
+        while time.time() - start < duration_seconds:
+            line = ser.readline().decode('utf-8', errors='ignore').strip()
+            if line:
+                values = line.split(',')
+                if len(values) == 6:
+                    try:
+                        data.append([float(x) for x in values])
+                    except ValueError:
+                        pass  # Skip malformed lines
+        ser.close()
+        logger.info(f"Captured {len(data)} real data points from hardware")
+    except Exception as e:
+        logger.error(f"Hardware connection failed: {e}")
+        logger.info("Falling back to CSV data...")
+    return data
 
 
 def load_replay_data(csv_file: str) -> list:
@@ -109,18 +141,23 @@ if __name__ == "__main__":
     print("  MORPHOLOCK RED TEAM — SOFTWARE INJECTION ATTACK")
     print("="*55)
 
-    # Step 1: Load the stolen data
-    print("\n[ATTACKER] Loading stolen behavioral data...")
-    data = load_replay_data("training_data.csv")
+    # Step 1: Capture real flat hardware data from COM4
+    print("\n[ATTACKER] Capturing real hardware data while Arduino lies flat...")
+    print("[MORPHOLOCK] Arduino is on the table — no human holding it")
+    data = capture_flat_hardware_data(ARDUINO_PORT, duration_seconds=3)
+
+    # Fallback to CSV if hardware fails
     if not data:
-        print("[ATTACKER] No data loaded. Place training_data.csv in this folder.")
-        exit(1)
-    print(f"[ATTACKER] {len(data)} data points loaded. Injection ready.")
+        print("[FALLBACK] Using saved CSV data...")
+        data = load_replay_data("training_data.csv")
+        if not data:
+            print("[ATTACKER] No data loaded. Exiting.")
+            exit(1)
+
+    print(f"[ATTACKER] {len(data)} data points ready for execution.")
 
     # Step 2: Measure physical tremor of current hardware state
     print("\n[MORPHOLOCK] Measuring physical tremor from hardware...")
-    print("[MORPHOLOCK] Arduino is lying flat on table...")
-    time.sleep(1)
     tremor_hz = measure_physical_tremor(data)
     print(f"[MORPHOLOCK] Detected tremor frequency: {tremor_hz} Hz")
 
@@ -140,7 +177,7 @@ if __name__ == "__main__":
         print("\n[MORPHOLOCK] HMAC check was never even reached.")
         print("[MORPHOLOCK] Software data injection cannot bypass the hardware gate.\n")
     else:
-        # Only reaches here if somehow tremor passes (not possible with flat CSV data)
+        # Only reaches here if tremor passes (e.g. human holding device)
         print("\n[MORPHOLOCK] Hardware gate passed. Proceeding to HMAC check...")
         server_result = attempt_software_injection(data)
         print(f"[MORPHOLOCK] Server response: {server_result}")
